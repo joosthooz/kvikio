@@ -164,7 +164,7 @@ std::string S3Endpoint::unwrap_or_default(std::optional<std::string> aws_arg,
 
 std::string S3Endpoint::url_from_bucket_and_object(std::string const& bucket_name,
                                                    std::string const& object_name,
-                                                   std::optional<std::string> const& aws_region,
+                                                   std::optional<std::string> aws_region,
                                                    std::optional<std::string> aws_endpoint_url)
 {
   auto const endpoint_url = unwrap_or_default(std::move(aws_endpoint_url), "AWS_ENDPOINT_URL");
