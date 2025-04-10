@@ -141,6 +141,7 @@ void S3Endpoint::setopt(CurlHandle& curl)
   curl.setopt(CURLOPT_URL, _url.c_str());
   curl.setopt(CURLOPT_AWS_SIGV4, _aws_sigv4.c_str());
   curl.setopt(CURLOPT_USERPWD, _aws_userpwd.c_str());
+  if (_curl_header_list) { curl.setopt(CURLOPT_HTTPHEADER, _curl_header_list); }
 }
 
 std::string S3Endpoint::unwrap_or_default(std::optional<std::string> aws_arg,
@@ -159,7 +160,7 @@ std::string S3Endpoint::unwrap_or_default(std::optional<std::string> aws_arg,
 
 std::string S3Endpoint::url_from_bucket_and_object(std::string const& bucket_name,
                                                    std::string const& object_name,
-                                                   std::optional<std::string> const& aws_region,
+                                                   std::optional<std::string> aws_region,
                                                    std::optional<std::string> aws_endpoint_url)
 {
   auto const endpoint_url = unwrap_or_default(std::move(aws_endpoint_url), "AWS_ENDPOINT_URL");
@@ -190,7 +191,8 @@ std::pair<std::string, std::string> S3Endpoint::parse_s3_url(std::string const& 
 S3Endpoint::S3Endpoint(std::string url,
                        std::optional<std::string> aws_region,
                        std::optional<std::string> aws_access_key,
-                       std::optional<std::string> aws_secret_access_key)
+                       std::optional<std::string> aws_secret_access_key,
+                       std::optional<std::string> aws_session_token)
   : _url{std::move(url)}
 {
   // Regular expression to match http[s]://
@@ -229,6 +231,23 @@ S3Endpoint::S3Endpoint(std::string url,
     ss << access_key << ":" << secret_access_key;
     _aws_userpwd = ss.str();
   }
+  // Access key IDs beginning with ASIA are temporary credentials that are created using AWS STS
+  // operations. They need a session token to work.
+  if (access_key.compare(0, 4, std::string("ASIA")) == 0) {
+    // Create a Custom Curl header for the session token.
+    // The _curl_header_list created by curl_slist_append must be manually freed
+    // (see https://curl.se/libcurl/c/CURLOPT_HTTPHEADER.html)
+    auto session_token =
+      unwrap_or_default(std::move(aws_session_token),
+                        "AWS_SESSION_TOKEN",
+                        "When using temporary credentials, AWS_SESSION_TOKEN must be set.");
+    std::stringstream ss;
+    ss << "x-amz-security-token: " << session_token;
+    _curl_header_list = curl_slist_append(NULL, ss.str().c_str());
+    KVIKIO_EXPECT(_curl_header_list != nullptr,
+                  "Failed to create curl header for AWS token",
+                  std::runtime_error);
+  }
 }
 
 S3Endpoint::S3Endpoint(std::string const& bucket_name,
@@ -236,14 +255,18 @@ S3Endpoint::S3Endpoint(std::string const& bucket_name,
                        std::optional<std::string> aws_region,
                        std::optional<std::string> aws_access_key,
                        std::optional<std::string> aws_secret_access_key,
+                       std::optional<std::string> aws_session_token,
                        std::optional<std::string> aws_endpoint_url)
   : S3Endpoint(
       url_from_bucket_and_object(bucket_name, object_name, aws_region, std::move(aws_endpoint_url)),
-      std::move(aws_region),
+      aws_region,
       std::move(aws_access_key),
-      std::move(aws_secret_access_key))
+      std::move(aws_secret_access_key),
+      std::move(aws_session_token))
 {
 }
+
+S3Endpoint::~S3Endpoint() { curl_slist_free_all(_curl_header_list); }
 
 std::string S3Endpoint::str() const { return _url; }
 
