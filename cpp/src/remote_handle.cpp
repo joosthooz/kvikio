@@ -28,6 +28,7 @@
 #include <kvikio/parallel_operation.hpp>
 #include <kvikio/posix_io.hpp>
 #include <kvikio/remote_handle.hpp>
+#include <kvikio/shim/libcurl.hpp>
 #include <kvikio/utils.hpp>
 
 namespace kvikio {
@@ -139,13 +140,7 @@ void S3Endpoint::setopt(CurlHandle& curl)
   curl.setopt(CURLOPT_URL, _url.c_str());
   curl.setopt(CURLOPT_AWS_SIGV4, _aws_sigv4.c_str());
   curl.setopt(CURLOPT_USERPWD, _aws_userpwd.c_str());
-  if (!_aws_token.empty()) {
-    _curl_header_list = curl_slist_append(NULL, _aws_token.c_str());
-    if (!_curl_header_list) {
-      throw std::runtime_error("Failed to create curl header for AWS token");
-    }
-    curl.setopt(CURLOPT_HTTPHEADER, _curl_header_list);
-  }
+  if (_curl_header_list) { curl.setopt(CURLOPT_HTTPHEADER, _curl_header_list); }
 }
 
 std::string S3Endpoint::unwrap_or_default(std::optional<std::string> aws_arg,
@@ -233,15 +228,24 @@ S3Endpoint::S3Endpoint(std::string url,
     ss << access_key << ":" << secret_access_key;
     _aws_userpwd = ss.str();
   }
+  // Access key IDs beginning with ASIA are temporary credentials that are created using AWS STS
+  // operations. They need a session token to work.
   if (access_key.compare(0, 4, std::string("ASIA")) == 0) {
+    // Create a Custom Curl header for the session token.
+    // The _curl_header_list created by curl_slist_append must be manually freed
+    // (see https://curl.se/libcurl/c/CURLOPT_HTTPHEADER.html)
     char const* env = std::getenv("AWS_SESSION_TOKEN");
     if (env == nullptr) {
-      throw std::invalid_argument("When using temporary credentials, AWS_SESSION_TOKEN must be set.");
+      throw std::invalid_argument(
+        "When using temporary credentials, AWS_SESSION_TOKEN must be set.");
     }
-    auto token = std::string(env);
+    auto session_token = std::string(env);
     std::stringstream ss;
-    ss << "x-amz-security-token: " << token;
-    _aws_token = ss.str();
+    ss << "x-amz-security-token: " << session_token;
+    _curl_header_list = curl_slist_append(NULL, ss.str().c_str());
+    if (_curl_header_list == nullptr) {
+      throw std::runtime_error("Failed to create curl header for AWS token");
+    }
   }
 }
 
@@ -258,6 +262,8 @@ S3Endpoint::S3Endpoint(std::string const& bucket_name,
       std::move(aws_secret_access_key))
 {
 }
+
+S3Endpoint::~S3Endpoint() { curl_slist_free_all(_curl_header_list); }
 
 std::string S3Endpoint::str() const { return _url; }
 
