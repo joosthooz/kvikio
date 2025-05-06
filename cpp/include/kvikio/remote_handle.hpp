@@ -162,8 +162,7 @@ class S3Endpoint : public RemoteEndpoint {
   S3Endpoint(std::string url,
              std::optional<std::string> aws_region            = std::nullopt,
              std::optional<std::string> aws_access_key        = std::nullopt,
-             std::optional<std::string> aws_secret_access_key = std::nullopt,
-             std::optional<std::string> aws_session_token     = std::nullopt);
+             std::optional<std::string> aws_secret_access_key = std::nullopt);
 
   /**
    * @brief Create a S3 endpoint from a bucket and object name.
@@ -188,8 +187,7 @@ class S3Endpoint : public RemoteEndpoint {
              std::optional<std::string> aws_region            = std::nullopt,
              std::optional<std::string> aws_access_key        = std::nullopt,
              std::optional<std::string> aws_secret_access_key = std::nullopt,
-             std::optional<std::string> aws_endpoint_url      = std::nullopt,
-             std::optional<std::string> aws_session_token     = std::nullopt);
+             std::optional<std::string> aws_endpoint_url      = std::nullopt);
 
   void setopt(CurlHandle& curl) override;
   std::string str() const override;

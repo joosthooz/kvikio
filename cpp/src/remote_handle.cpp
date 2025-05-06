@@ -191,8 +191,7 @@ std::pair<std::string, std::string> S3Endpoint::parse_s3_url(std::string const& 
 S3Endpoint::S3Endpoint(std::string url,
                        std::optional<std::string> aws_region,
                        std::optional<std::string> aws_access_key,
-                       std::optional<std::string> aws_secret_access_key,
-                       std::optional<std::string> aws_session_token)
+                       std::optional<std::string> aws_secret_access_key)
   : _url{std::move(url)}
 {
   // Regular expression to match http[s]://
@@ -237,10 +236,11 @@ S3Endpoint::S3Endpoint(std::string url,
     // Create a Custom Curl header for the session token.
     // The _curl_header_list created by curl_slist_append must be manually freed
     // (see https://curl.se/libcurl/c/CURLOPT_HTTPHEADER.html)
-    auto session_token =
-      unwrap_or_default(std::move(aws_session_token),
-                        "AWS_SESSION_TOKEN",
-                        "When using temporary credentials, AWS_SESSION_TOKEN must be set.");
+    char const* env = std::getenv("AWS_SESSION_TOKEN");
+    KVIKIO_EXPECT(env != nullptr,
+                  "When using temporary credentials, AWS_SESSION_TOKEN must be set.",
+                  std::invalid_argument);
+    auto session_token = std::string(env);
     std::stringstream ss;
     ss << "x-amz-security-token: " << session_token;
     _curl_header_list = curl_slist_append(NULL, ss.str().c_str());
@@ -255,14 +255,12 @@ S3Endpoint::S3Endpoint(std::string const& bucket_name,
                        std::optional<std::string> aws_region,
                        std::optional<std::string> aws_access_key,
                        std::optional<std::string> aws_secret_access_key,
-                       std::optional<std::string> aws_session_token,
                        std::optional<std::string> aws_endpoint_url)
   : S3Endpoint(
       url_from_bucket_and_object(bucket_name, object_name, aws_region, std::move(aws_endpoint_url)),
       aws_region,
       std::move(aws_access_key),
-      std::move(aws_secret_access_key),
-      std::move(aws_session_token))
+      std::move(aws_secret_access_key))
 {
 }
 
